@@ -93,9 +93,27 @@ services:
       KAFKA_BROKER_URL: kafka:9092
       INFLUX_URL: http://influxdb:8086
       INFLUX_ORG: ${DOCKER_INFLUXDB_INIT_ORG}
-      INFLUX_BUCKET: ${DOCKER_INFLUXDB_INIT_BUCKET}
+      INFLUX_BUCKET: xapp
     secrets:
       - influxdb2-admin-token
+    logging: *default-logging
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      UI_PORT: 3000
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_ORG: ${DOCKER_INFLUXDB_INIT_ORG}
+      INFLUXDB_BUCKET: xapp
+      INFLUXDB_TOKEN_FILE: /run/secrets/influxdb2-admin-token
+    secrets:
+      - influxdb2-admin-token
+    depends_on:
+      - influxdb
     logging: *default-logging
 
 secrets:

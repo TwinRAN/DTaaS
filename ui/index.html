@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TwinRAN Topology Viewer</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>TwinRAN Network Topology</h1>
+            <div class="controls">
+                <button id="refreshBtn">Refresh Data</button>
+                <button id="debugBtn">Debug Data</button>
+                <select id="timeRange">
+                    <option value="1h">Last Hour</option>
+                    <option value="6h">Last 6 Hours</option>
+                    <option value="24h">Last 24 Hours</option>
+                    <option value="7d">Last 7 Days</option>
+                </select>
+            </div>
+        </header>
+        
+        <main>
+            <div class="topology-container">
+                <div id="topology"></div>
+            </div>
+            
+            <div class="sidebar">
+                <div id="nodeInfo" class="node-info hidden">
+                    <h3>Node Information</h3>
+                    <div id="nodeDetails"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal for time series view -->
+    <div id="timeSeriesModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">UE Time Series</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <canvas id="timeSeriesChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html> 

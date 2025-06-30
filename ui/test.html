@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TwinRAN UI Test</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>TwinRAN Network Topology - Test Mode</h1>
+            <div class="controls">
+                <button id="testBtn">Test Visualization</button>
+                <button id="testChartBtn">Test Chart</button>
+            </div>
+        </header>
+        
+        <main>
+            <div class="topology-container">
+                <div id="topology"></div>
+            </div>
+            
+            <div class="sidebar">
+                <div id="nodeInfo" class="node-info hidden">
+                    <h3>Node Information</h3>
+                    <div id="nodeDetails"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal for time series view -->
+    <div id="timeSeriesModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Test Time Series</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <canvas id="timeSeriesChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Test data
+        const testData = [
+            { ue_id: 'UE001', gnb_id: 'gNB001', measurement: 'throughput', value: 150.5, timestamp: new Date().toISOString() },
+            { ue_id: 'UE002', gnb_id: 'gNB001', measurement: 'throughput', value: 120.3, timestamp: new Date().toISOString() },
+            { ue_id: 'UE003', gnb_id: 'gNB002', measurement: 'throughput', value: 200.1, timestamp: new Date().toISOString() },
+            { ue_id: 'UE004', gnb_id: 'gNB002', measurement: 'throughput', value: 180.7, timestamp: new Date().toISOString() }
+        ];
+
+        // Test topology visualization
+        function testTopology() {
+            const container = document.getElementById('topology');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            
+            container.innerHTML = '';
+            
+            const svg = d3.select('#topology')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+            
+            // Create test nodes
+            const nodes = [
+                { id: 'gNB001', type: 'gnb', data: testData[0], size: 20, x: width * 0.3, y: height * 0.5 },
+                { id: 'gNB002', type: 'gnb', data: testData[2], size: 20, x: width * 0.7, y: height * 0.5 },
+                { id: 'UE001', type: 'ue', data: testData[0], size: 15, x: width * 0.2, y: height * 0.3 },
+                { id: 'UE002', type: 'ue', data: testData[1], size: 15, x: width * 0.2, y: height * 0.7 },
+                { id: 'UE003', type: 'ue', data: testData[2], size: 15, x: width * 0.8, y: height * 0.3 },
+                { id: 'UE004', type: 'ue', data: testData[3], size: 15, x: width * 0.8, y: height * 0.7 }
+            ];
+            
+            const links = [
+                { source: 'gNB001', target: 'UE001' },
+                { source: 'gNB001', target: 'UE002' },
+                { source: 'gNB002', target: 'UE003' },
+                { source: 'gNB002', target: 'UE004' }
+            ];
+            
+            // Create links
+            svg.append('g')
+                .selectAll('line')
+                .data(links)
+                .enter().append('line')
+                .attr('class', 'link')
+                .attr('x1', d => nodes.find(n => n.id === d.source).x)
+                .attr('y1', d => nodes.find(n => n.id === d.source).y)
+                .attr('x2', d => nodes.find(n => n.id === d.target).x)
+                .attr('y2', d => nodes.find(n => n.id === d.target).y);
+            
+            // Create nodes
+            const node = svg.append('g')
+                .selectAll('g')
+                .data(nodes)
+                .enter().append('g')
+                .attr('class', 'node')
+                .attr('transform', d => `translate(${d.x},${d.y})`);
+            
+            node.append('circle')
+                .attr('r', d => d.size)
+                .attr('class', d => d.type);
+            
+            node.append('text')
+                .text(d => d.id);
+            
+            // Add event listeners
+            node.on('mouseover', showNodeInfo)
+                .on('mouseout', hideNodeInfo)
+                .on('click', showTimeSeries);
+        }
+
+        function showNodeInfo(event, d) {
+            const nodeInfo = document.getElementById('nodeInfo');
+            const nodeDetails = document.getElementById('nodeDetails');
+            
+            const table = document.createElement('table');
+            table.className = 'node-details';
+            
+            const tbody = document.createElement('tbody');
+            Object.entries(d.data).forEach(([key, value]) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `<th>${key}</th><td>${value}</td>`;
+                tbody.appendChild(row);
+            });
+            
+            table.appendChild(tbody);
+            nodeDetails.innerHTML = '';
+            nodeDetails.appendChild(table);
+            nodeInfo.classList.remove('hidden');
+        }
+
+        function hideNodeInfo() {
+            document.getElementById('nodeInfo').classList.add('hidden');
+        }
+
+        function showTimeSeries(event, d) {
+            if (d.type !== 'ue') return;
+            
+            const modal = document.getElementById('timeSeriesModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const canvas = document.getElementById('timeSeriesChart');
+            
+            modalTitle.textContent = `UE ${d.id} Time Series`;
+            
+            // Create test time series data
+            const timeSeriesData = [];
+            for (let i = 0; i < 20; i++) {
+                timeSeriesData.push({
+                    timestamp: new Date(Date.now() - (20 - i) * 60000).toISOString(),
+                    value: Math.random() * 200 + 50
+                });
+            }
+            
+            const ctx = canvas.getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timeSeriesData.map(d => new Date(d.timestamp).toLocaleTimeString()),
+                    datasets: [{
+                        label: 'Test Data',
+                        data: timeSeriesData.map(d => d.value),
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+            
+            modal.classList.remove('hidden');
+        }
+
+        // Event listeners
+        document.getElementById('testBtn').addEventListener('click', testTopology);
+        document.getElementById('testChartBtn').addEventListener('click', () => {
+            showTimeSeries(null, { id: 'TEST001', type: 'ue' });
+        });
+
+        document.querySelector('.close').addEventListener('click', () => {
+            document.getElementById('timeSeriesModal').classList.add('hidden');
+        });
+
+        window.addEventListener('click', (event) => {
+            const modal = document.getElementById('timeSeriesModal');
+            if (event.target === modal) {
+                modal.classList.add('hidden');
+            }
+        });
+
+        // Initialize test visualization
+        testTopology();
+    </script>
+</body>
+</html> 
