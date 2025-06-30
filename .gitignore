@@ -1,0 +1,59 @@
+# Data directories
+data/
+data/*
+
+# Environment files with secrets
+.env.influxdb2-admin-*
+.env.local
+.env.production
+
+# Log files
+*.log
+logs/
+
+# Docker volumes and data
+docker-data/
+volumes/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak
+*.backup
+
+# Node modules (if any)
+node_modules/
+
+# Python cache (if any)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Compiled files
+*.o
+*.a
+*.so
+*.dylib
+*.dll 
