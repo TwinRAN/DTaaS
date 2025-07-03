@@ -232,6 +232,35 @@ main {
     opacity: 0.6;
 }
 
+/* Chart controls */
+.chart-controls {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.chart-controls label {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.chart-controls select {
+    padding: 8px 12px;
+    border: 1px solid #bdc3c7;
+    border-radius: 5px;
+    background: white;
+    color: #2c3e50;
+    font-size: 14px;
+    min-width: 150px;
+}
+
+.chart-container {
+    position: relative;
+    height: 400px;
+    width: 100%;
+}
+
 /* Time series table styles */
 .field-table {
     margin-bottom: 30px;

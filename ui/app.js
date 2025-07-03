@@ -7,6 +7,8 @@ class TwinRANTopology {
         this.width = 0;
         this.height = 0;
         this.config = null;
+        this.timeSeriesChart = null;
+        this.currentTimeSeriesData = null;
         
         this.init();
     }
@@ -415,7 +417,7 @@ class TwinRANTopology {
         
         modalTitle.textContent = `UE ${ueId} Time Series Data`;
         
-        console.log('Time series data for tables:', data);
+        console.log('Time series data for charts:', data);
         
         if (data.length === 0) {
             // Show message if no data
@@ -423,6 +425,9 @@ class TwinRANTopology {
             modal.classList.remove('hidden');
             return;
         }
+        
+        // Store the data for chart updates
+        this.currentTimeSeriesData = data;
         
         // Group data by field
         const fieldGroups = {};
@@ -434,42 +439,106 @@ class TwinRANTopology {
             fieldGroups[field].push(record);
         });
         
-        // Create tables for each field
-        let tablesHTML = '';
+        // Populate field dropdown
+        const fieldSelect = document.getElementById('fieldSelect');
+        fieldSelect.innerHTML = '';
         Object.keys(fieldGroups).forEach(field => {
-            const fieldData = fieldGroups[field];
-            
-            tablesHTML += `
-                <div class="field-table">
-                    <h3>Field: ${field}</h3>
-                    <table class="time-series-table">
-                        <thead>
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>Value</th>
-                                <th>Measurement</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${fieldData.map(record => `
-                                <tr>
-                                    <td>${new Date(record.timestamp).toLocaleString()}</td>
-                                    <td>${record.value}</td>
-                                    <td>${record.measurement}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
+            const option = document.createElement('option');
+            option.value = field;
+            option.textContent = field;
+            fieldSelect.appendChild(option);
         });
         
-        modalBody.innerHTML = tablesHTML;
+        // Set up field change event
+        fieldSelect.onchange = () => {
+            this.updateChart(fieldSelect.value);
+        };
+        
+        // Show modal and create initial chart
         modal.classList.remove('hidden');
+        if (Object.keys(fieldGroups).length > 0) {
+            this.updateChart(Object.keys(fieldGroups)[0]);
+        }
+    }
+
+    updateChart(selectedField) {
+        if (!this.currentTimeSeriesData) return;
+        
+        // Filter data for selected field
+        const fieldData = this.currentTimeSeriesData.filter(record => record.field === selectedField);
+        
+        // Destroy existing chart
+        if (this.timeSeriesChart) {
+            this.timeSeriesChart.destroy();
+        }
+        
+        const canvas = document.getElementById('timeSeriesChart');
+        const ctx = canvas.getContext('2d');
+        
+        this.timeSeriesChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: fieldData.map(d => new Date(d.timestamp).toLocaleString()),
+                datasets: [{
+                    label: selectedField,
+                    data: fieldData.map(d => d.value),
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                    tension: 0.1,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: '#3498db',
+                    pointBorderColor: '#2980b9'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                return 'Time: ' + context[0].label;
+                            },
+                            label: function(context) {
+                                return selectedField + ': ' + context.parsed.y;
+                            }
+                        }
+                    },
+                    legend: {
+                        display: true
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: selectedField
+                        },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
     }
 
     hideModal() {
         document.getElementById('timeSeriesModal').classList.add('hidden');
+        if (this.timeSeriesChart) {
+            this.timeSeriesChart.destroy();
+            this.timeSeriesChart = null;
+        }
+        this.currentTimeSeriesData = null;
     }
 
     showError(message) {

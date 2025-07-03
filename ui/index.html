@@ -6,11 +6,12 @@
     <title>TwinRAN Topology Viewer</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>TwinRAN Network Topology</h1>
+            <h1>TwinRAN Network Digital Twin Topology</h1>
             <div class="controls">
                 <button id="refreshBtn">Refresh Data</button>
                 <button id="debugBtn">Debug Data</button>
@@ -45,7 +46,15 @@
                 <span class="close">&times;</span>
             </div>
             <div class="modal-body">
-                <canvas id="timeSeriesChart"></canvas>
+                <div class="chart-controls">
+                    <label for="fieldSelect">Select Field:</label>
+                    <select id="fieldSelect">
+                        <option value="">Loading fields...</option>
+                    </select>
+                </div>
+                <div class="chart-container">
+                    <canvas id="timeSeriesChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
