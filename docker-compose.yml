@@ -18,9 +18,10 @@ x-influxdb-init-common-environment: &influxdb-init-common-environment
   SETUP_BUCKETS: ${SETUP_BUCKETS}
 
 services:
-
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.6
+    networks:
+      twinran:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
 
@@ -28,6 +29,8 @@ services:
     image: confluentinc/cp-kafka:7.6.6
     ports:
       - "9092:9092"
+    networks:
+      twinran:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -41,6 +44,8 @@ services:
     image: obsidiandynamics/kafdrop:4.0.1
     ports:
       - "9000:9000"
+    networks:
+      twinran:
     environment:
       KAFKA_BROKER_CONNECT: "kafka:9092"
       JVM_OPTS: "-Xms32M -Xmx64M"
@@ -52,6 +57,8 @@ services:
     ports:
       - 8086:8086
     environment: *influxdb-init-common-environment
+    networks:
+      twinran:
     secrets:
       - influxdb2-admin-username
       - influxdb2-admin-password
@@ -65,20 +72,22 @@ services:
       retries: 10
 
   influxdb_setup:
-      image: "influxdb:2.7"
-      depends_on:
-        influxdb:
-          condition:
-            service_healthy
-      entrypoint: [ "bash", "/usr/local/automation/influxdb2_setup.sh" ]
-      volumes:
-        - ./influxdb2_setup.sh:/usr/local/automation/influxdb2_setup.sh
-      environment: *influxdb-init-common-environment
-      secrets:
-        - influxdb2-admin-username
-        - influxdb2-admin-password
-        - influxdb2-admin-token
-      logging: *default-logging
+    image: "influxdb:2.7"
+    depends_on:
+      influxdb:
+        condition:
+          service_healthy
+    entrypoint: [ "bash", "/usr/local/automation/influxdb2_setup.sh" ]
+    networks:
+      twinran:
+    volumes:
+      - ./influxdb2_setup.sh:/usr/local/automation/influxdb2_setup.sh
+    environment: *influxdb-init-common-environment
+    secrets:
+      - influxdb2-admin-username
+      - influxdb2-admin-password
+      - influxdb2-admin-token
+    logging: *default-logging
 
   telegraf:
     image: telegraf:1.30
@@ -89,6 +98,8 @@ services:
       - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
       - ./telegraf-entrypoint.sh:/telegraf-entrypoint.sh:ro
     entrypoint: ["/telegraf-entrypoint.sh"]
+    networks:
+      twinran:
     environment:
       KAFKA_BROKER_URL: kafka:9092
       INFLUX_URL: http://influxdb:8086
@@ -110,11 +121,30 @@ services:
       INFLUXDB_ORG: ${DOCKER_INFLUXDB_INIT_ORG}
       INFLUXDB_BUCKET: xapp
       INFLUXDB_TOKEN_FILE: /run/secrets/influxdb2-admin-token
+    networks:
+      twinran:
     secrets:
       - influxdb2-admin-token
     depends_on:
       - influxdb
     logging: *default-logging
+
+  xapp_kpm_twinran:
+    image: xapp_kpm_twinran_ubuntu:latest
+    logging: *default-logging
+    command: "stdbuf -o0 -e0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_kafka"
+    # command: "stdbuf -o0 -e0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_moni"
+    networks:
+      rfsim5g-oai-public-net:
+        ipv4_address: 192.168.71.181
+      twinran:
+    volumes:
+      - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
+      - bts_sharedXappLibs:/app/data
+
+volumes:
+  bts_sharedXappLibs:
+    external: true
 
 secrets:
   influxdb2-admin-username:
@@ -123,3 +153,9 @@ secrets:
     file: ./.env.influxdb2-admin-password
   influxdb2-admin-token:
     file: ./.env.influxdb2-admin-token
+
+networks:
+  rfsim5g-oai-public-net:
+    external: true
+  twinran:
+    driver: bridge
