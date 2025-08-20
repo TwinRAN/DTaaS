@@ -344,7 +344,14 @@ class TwinRANTopology {
         const tbody = document.createElement('tbody');
         
         Object.entries(data).forEach(([key, value]) => {
+            // Skip value, field, and measurement columns
+            if (key === 'value' || key === 'field' || key === 'measurement') {
+                return;
+            }
+            
+            // Rename timestamp to last heartbeat timestamp
             if (key === 'timestamp') {
+                key = 'last heartbeat timestamp';
                 value = new Date(value).toLocaleString();
             }
             

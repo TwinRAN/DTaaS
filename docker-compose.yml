@@ -39,6 +39,12 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
     depends_on:
       - zookeeper
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   kafdrop:
     image: obsidiandynamics/kafdrop:4.0.1
@@ -92,8 +98,10 @@ services:
   telegraf:
     image: telegraf:1.30
     depends_on:
-      - kafka
-      - influxdb
+      kafka:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
     volumes:
       - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
       - ./telegraf-entrypoint.sh:/telegraf-entrypoint.sh:ro
@@ -134,13 +142,16 @@ services:
     logging: *default-logging
     command: "stdbuf -o0 -e0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_kafka"
     # command: "stdbuf -o0 -e0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_moni"
+    depends_on:
+      kafka:
+        condition: service_healthy
     networks:
       rfsim5g-oai-public-net:
         ipv4_address: 192.168.71.181
       twinran:
     volumes:
       - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
-      - bts_sharedXappLibs:/app/data
+      - bts_sharedXappLibs:/usr/local/lib/flexric/
 
 volumes:
   bts_sharedXappLibs:
