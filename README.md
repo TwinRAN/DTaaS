@@ -74,7 +74,7 @@ Setup openairinterface.
 git clone git@gitlab.btsgrp.com:khayal.huseynov/openairinterface5g.git
 cd openairinterface5g && git checkout twinran
 cd ci-scripts/yaml_files/bts/
-docker compose up -d
+./setup.sh # executes services in docker-compose.yml step-by-step
 cd - && cd ..
 ```
 

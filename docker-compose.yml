@@ -138,10 +138,9 @@ services:
     logging: *default-logging
 
   xapp_kpm_twinran:
-    image: xapp_kpm_twinran_ubuntu:latest
+    image: xapp_kpm_twinran_ubuntu:callback3
     logging: *default-logging
-    command: "stdbuf -o0 -e0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_kafka"
-    # command: "stdbuf -o0 -e0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_moni"
+    command: "stdbuf -o0 -e0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_twinran"
     depends_on:
       kafka:
         condition: service_healthy

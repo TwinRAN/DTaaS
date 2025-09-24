@@ -87,14 +87,15 @@ class TwinRANTopology {
     }
 
     async fetchInfluxData(timeRange) {
-        // Query to get latest data for each UE
+        // Query to get latest data for each UE-gNB combination
         const query = `
             from(bucket: "${this.config.influxdb.bucket}")
                 |> range(start: ${this.getTimeRangeStart(timeRange)}, stop: now())
-                |> filter(fn: (r) => exists r.ue_id)
-                |> group(columns: ["ue_id"])
+                |> filter(fn: (r) => exists r.gnb_id and exists r.ue_id) 
+                |> map(fn: (r) => ({ r with combo: r.gnb_id + ":" + r.ue_id }))
+                |> distinct(column: "combo")
+                |> group(columns: ["ue_id", "gnb_id"])
                 |> last()
-                |> group()
         `;
 
         const response = await fetch('/api/v2/query', {
@@ -143,10 +144,11 @@ class TwinRANTopology {
         let headerLine = null;
         
         for (const line of lines) {
+            console.log('Processing line:', line);
             if (line.startsWith('#') || line.trim() === '') continue;
             
             // Check if this is the data header line
-            if (line.includes('_time') && line.includes('_value')) {
+            if (line.includes('_time') || line.includes('_value')) {
                 dataStarted = true;
                 headerLine = line;
                 console.log('Found header line:', headerLine);
@@ -168,16 +170,17 @@ class TwinRANTopology {
                 const gnbIdIndex = headers.findIndex(h => h.includes('gnb_id'));
                 const fieldIndex = headers.findIndex(h => h.includes('_field'));
                 const measurementIndex = headers.findIndex(h => h.includes('_measurement'));
+                const timeIndex = headers.findIndex(h => h.includes('_stop'));
                 
                 console.log('Field indices:', { ueIdIndex, gnbIdIndex, fieldIndex, measurementIndex });
                 
                 const record = {
-                    timestamp: parts[5] || new Date().toISOString(),
+                    timestamp: parts[timeIndex] || new Date().toISOString(),
                     value: parseFloat(parts[6]) || 0,
                     field: parts[fieldIndex] || 'unknown',
                     measurement: parts[measurementIndex] || 'unknown',
                     ue_id: parts[ueIdIndex] || 'unknown',
-                    gnb_id: parts[gnbIdIndex] || 'gNB001' // Default gNodeB
+                    gnb_id: parts[gnbIdIndex] || null // No default gNodeB
                 };
                 
                 console.log('Parsed record:', record);
@@ -196,45 +199,62 @@ class TwinRANTopology {
         this.links = [];
         
         const ueMap = new Map();
+        const gnbMap = new Map();
         
-        // Process data to extract UEs
+        // Process data to extract UEs and gNBs
         data.forEach(record => {
             const ueId = record.ue_id;
+            const gnbId = record.gnb_id;
             
-            // Add UE if not exists
-            if (!ueMap.has(ueId)) {
-                ueMap.set(ueId, {
-                    id: ueId,
+            // Check if gNB object exists, if not create it
+            if (gnbId && !gnbMap.has(gnbId)) {
+                gnbMap.set(gnbId, {
+                    id: gnbId,
+                    type: 'gnb',
+                    data: { 
+                        gnb_id: gnbId, 
+                        name: `Base Station ${gnbId}`,
+                        type: 'gNodeB',
+                        status: 'Active'
+                    },
+                    size: 35
+                });
+            }
+            
+            // Create composite key for UE (ue_id + gnb_id) since ue_id can be same across different gNBs
+            const compositeUeKey = `${ueId}_${gnbId}`;
+            
+            // Add UE if not exists (using composite key)
+            if (!ueMap.has(compositeUeKey)) {
+                ueMap.set(compositeUeKey, {
+                    id: compositeUeKey, // Use composite key as unique ID
+                    displayId: ueId, // Keep original UE ID for display
                     type: 'ue',
                     data: record,
-                    gnb: 'gNB001' // Attach to single gNodeB
+                    gnb: gnbId // Attach to the specific gNodeB from data
                 });
             }
         });
         
-        // Create single gNodeB
-        const gnbNode = {
-            id: 'gNB001',
-            type: 'gnb',
-            data: { gnb_id: 'gNB001', name: 'Base Station' },
-            size: 25
-        };
+        // Convert gNBs to nodes
+        const gnbNodes = Array.from(gnbMap.values());
         
         // Convert UEs to nodes
         const ueNodes = Array.from(ueMap.values()).map(ue => ({
-            id: ue.id,
+            id: ue.id, // Use composite key for unique identification
+            displayId: ue.displayId, // Original UE ID for display
             type: 'ue',
             data: ue.data,
-            size: 15
+            size: 25
         }));
         
-        // Create links from gNodeB to UEs
+        // Create links from each UE to its parent gNB
         const links = ueNodes.map(ue => ({
-            source: 'gNB001',
+            source: ue.data.gnb_id,
             target: ue.id
-        }));
+        })).filter(link => link.source); // Filter out any UEs without gnb_id
         
-        this.nodes = [gnbNode, ...ueNodes];
+        this.nodes = [...gnbNodes, ...ueNodes];
         this.links = links;
     }
 
@@ -284,7 +304,22 @@ class TwinRANTopology {
         
         // Add labels to nodes
         node.append('text')
-            .text(d => d.id.length > 8 ? d.id.substring(0, 8) + '...' : d.id);
+            .text(d => {
+                let displayText;
+                if (d.type === 'ue') {
+                    // For UE nodes, show "UE" prefix with original UE ID
+                    displayText = `UE ${d.displayId}`;
+                } else if (d.type === 'gnb') {
+                    // For gNB nodes, show "gNB" prefix with gNB ID
+                    displayText = `gNB ${d.id}`;
+                } else {
+                    // Fallback for other node types
+                    displayText = d.id;
+                }
+                
+                // Truncate if too long
+                return displayText.length > 12 ? displayText.substring(0, 12) + '...' : displayText;
+            });
         
         // Add event listeners
         node.on('mouseover', this.showNodeInfo.bind(this))
@@ -325,6 +360,16 @@ class TwinRANTopology {
         const nodeInfo = document.getElementById('nodeInfo');
         const nodeDetails = document.getElementById('nodeDetails');
         
+        // Update the header to show node type
+        const header = nodeInfo.querySelector('h3');
+        if (d.type === 'gnb') {
+            header.textContent = 'gNodeB Information';
+        } else if (d.type === 'ue') {
+            header.textContent = 'UE Information';
+        } else {
+            header.textContent = 'Node Information';
+        }
+        
         // Create table with node data
         const table = this.createDataTable(d.data);
         nodeDetails.innerHTML = '';
@@ -355,6 +400,16 @@ class TwinRANTopology {
                 value = new Date(value).toLocaleString();
             }
             
+            // Rename gnb_id to gNB ID for better display
+            if (key === 'gnb_id') {
+                key = 'gNB ID';
+            }
+            
+            // Rename ue_id to UE ID for better display
+            if (key === 'ue_id') {
+                key = 'UE ID';
+            }
+            
             const row = document.createElement('tr');
             row.innerHTML = `
                 <th>${key}</th>
@@ -371,11 +426,13 @@ class TwinRANTopology {
         if (d.type !== 'ue') return;
         
         try {
-            console.log('Fetching time series for UE:', d.id);
-            const timeSeriesData = await this.fetchTimeSeriesData(d.id);
+            // For UE nodes, use the original UE ID for time series queries, not the composite key
+            const originalUeId = d.displayId || d.data.ue_id;
+            console.log('Fetching time series for UE:', originalUeId);
+            const timeSeriesData = await this.fetchTimeSeriesData(originalUeId);
             console.log('Time series data received:', timeSeriesData);
             console.log('Data length:', timeSeriesData.length);
-            this.displayTimeSeriesModal(d.id, timeSeriesData);
+            this.displayTimeSeriesModal(originalUeId, timeSeriesData);
         } catch (error) {
             console.error('Error fetching time series:', error);
             this.showError('Failed to load time series data');
@@ -446,15 +503,41 @@ class TwinRANTopology {
             fieldGroups[field].push(record);
         });
         
-        // Populate field dropdown
+        // Populate field dropdown (exclude non-numeric fields)
         const fieldSelect = document.getElementById('fieldSelect');
         fieldSelect.innerHTML = '';
-        Object.keys(fieldGroups).forEach(field => {
-            const option = document.createElement('option');
-            option.value = field;
-            option.textContent = field;
-            fieldSelect.appendChild(option);
+        
+        // Filter out string fields that aren't suitable for charting
+        const chartableFields = Object.keys(fieldGroups).filter(field => {
+            // Exclude known string fields that shouldn't be charted
+            const excludedFields = ['ue_type', 'measurement', 'field'];
+            if (excludedFields.includes(field)) {
+                return false;
+            }
+            
+            // Also check if the field contains numeric values by examining sample data
+            const sampleRecord = fieldGroups[field][0];
+            if (sampleRecord && sampleRecord.value !== undefined) {
+                const numericValue = parseFloat(sampleRecord.value);
+                return !isNaN(numericValue);
+            }
+            
+            return true;
         });
+        
+        if (chartableFields.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No numeric fields available for charting';
+            fieldSelect.appendChild(option);
+        } else {
+            chartableFields.forEach(field => {
+                const option = document.createElement('option');
+                option.value = field;
+                option.textContent = field;
+                fieldSelect.appendChild(option);
+            });
+        }
         
         // Set up field change event
         fieldSelect.onchange = () => {
@@ -463,8 +546,8 @@ class TwinRANTopology {
         
         // Show modal and create initial chart
         modal.classList.remove('hidden');
-        if (Object.keys(fieldGroups).length > 0) {
-            this.updateChart(Object.keys(fieldGroups)[0]);
+        if (chartableFields.length > 0) {
+            this.updateChart(chartableFields[0]);
         }
     }
 
