@@ -134,11 +134,14 @@ services:
     secrets:
       - influxdb2-admin-token
     depends_on:
-      - influxdb
+      influxdb:
+        condition: service_healthy
+      modelapi:
+        condition: service_healthy
     logging: *default-logging
 
   xapp_kpm_twinran:
-    image: xapp_kpm_twinran_ubuntu:callback3
+    image: xapp_kpm_twinran_ubuntu:latest
     logging: *default-logging
     command: "stdbuf -o0 -e0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_twinran"
     depends_on:
@@ -151,6 +154,35 @@ services:
     volumes:
       - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
       - bts_sharedXappLibs:/usr/local/lib/flexric/
+
+  modelapi:
+    build: ./ai
+    container_name: twinran-aiaas
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    env_file:
+      - ./ai/.env
+    healthcheck:
+      test: >
+        CMD-SHELL python -c "import http.client,os,sys;
+        p=int(os.getenv('PORT','8000'));
+        c=http.client.HTTPConnection('127.0.0.1',p,timeout=2);
+        c.request('GET','/health');
+        sys.exit(0 if c.getresponse().status==200 else 1)"
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      twinran:
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./ai/app
+          target: /app/app
+        - action: sync
+          path: ./ai/ml-models
+          target: /app/ml-models
 
 volumes:
   bts_sharedXappLibs:

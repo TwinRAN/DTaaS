@@ -19,7 +19,7 @@ RUN python -m pip install --upgrade pip \
 COPY app/ app/
 COPY ml-models/ ml-models/
 COPY wsgi.py run_dev.py ./
-COPY .env.example ./
+COPY .env ./
 
 # --- Non-root user for security ---
 RUN useradd -m appuser
