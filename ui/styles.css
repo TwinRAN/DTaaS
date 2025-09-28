@@ -135,6 +135,61 @@ main {
     color: #6c757d;
 }
 
+/* Metrics button styling */
+.metrics-btn {
+    background: #27ae60;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    margin-top: 15px;
+    width: 100%;
+    transition: background 0.3s ease;
+}
+
+.metrics-btn:hover {
+    background: #229954;
+}
+
+/* Throughput display styling */
+.throughput-display {
+    margin-top: 20px;
+    padding: 15px;
+    background: #e8f5e8;
+    border-radius: 8px;
+    border-left: 4px solid #27ae60;
+}
+
+.throughput-display h4 {
+    color: #2c3e50;
+    margin-bottom: 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.throughput-value {
+    font-size: 18px;
+    font-weight: bold;
+    padding: 8px 12px;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.throughput-value.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.throughput-value.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
 /* Modal styles */
 .modal {
     position: fixed;
@@ -205,6 +260,12 @@ main {
 
 .node:hover {
     stroke-width: 3px;
+}
+
+.node.selected {
+    stroke-width: 1px;
+    stroke: #3498db;
+    filter: drop-shadow(0 0 4px rgba(52, 152, 219, 0.4));
 }
 
 .node.gnb {

@@ -87,15 +87,15 @@ class TwinRANTopology {
     }
 
     async fetchInfluxData(timeRange) {
-        // Query to get latest data for each UE-gNB combination
+        // Query to get latest data for each UE-gNB combination with all fields
         const query = `
             from(bucket: "${this.config.influxdb.bucket}")
                 |> range(start: ${this.getTimeRangeStart(timeRange)}, stop: now())
-                |> filter(fn: (r) => exists r.gnb_id and exists r.ue_id) 
+                |> filter(fn: (r) => exists r.gnb_id and exists r.ue_id)
+                |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
                 |> map(fn: (r) => ({ r with combo: r.gnb_id + ":" + r.ue_id }))
-                |> distinct(column: "combo")
                 |> group(columns: ["ue_id", "gnb_id"])
-                |> last()
+                |> last(column: "_time")
         `;
 
         const response = await fetch('/api/v2/query', {
@@ -148,7 +148,7 @@ class TwinRANTopology {
             if (line.startsWith('#') || line.trim() === '') continue;
             
             // Check if this is the data header line
-            if (line.includes('_time') || line.includes('_value')) {
+            if (line.includes('_time') || line.includes('ue_id')) {
                 dataStarted = true;
                 headerLine = line;
                 console.log('Found header line:', headerLine);
@@ -158,30 +158,38 @@ class TwinRANTopology {
             if (!dataStarted) continue;
             
             const parts = line.split(',');
-            if (parts.length < 6) continue;
+            if (parts.length < 3) continue;
             
             try {
-                // Parse the Flux CSV format
-                // Find the position of ue_id in the header
+                // Parse the Flux CSV format with pivoted data
                 const headers = headerLine.split(',');
                 console.log('Headers:', headers);
                 
-                const ueIdIndex = headers.findIndex(h => h.includes('ue_id'));
-                const gnbIdIndex = headers.findIndex(h => h.includes('gnb_id'));
-                const fieldIndex = headers.findIndex(h => h.includes('_field'));
-                const measurementIndex = headers.findIndex(h => h.includes('_measurement'));
-                const timeIndex = headers.findIndex(h => h.includes('_stop'));
+                const record = {};
                 
-                console.log('Field indices:', { ueIdIndex, gnbIdIndex, fieldIndex, measurementIndex });
-                
-                const record = {
-                    timestamp: parts[timeIndex] || new Date().toISOString(),
-                    value: parseFloat(parts[6]) || 0,
-                    field: parts[fieldIndex] || 'unknown',
-                    measurement: parts[measurementIndex] || 'unknown',
-                    ue_id: parts[ueIdIndex] || 'unknown',
-                    gnb_id: parts[gnbIdIndex] || null // No default gNodeB
-                };
+                // Map each column to its value
+                headers.forEach((header, index) => {
+                    const value = parts[index] || '';
+                    const cleanHeader = header.trim();
+                    
+                    // Convert numeric fields to numbers
+                    if (cleanHeader.includes('_time') || cleanHeader.includes('timestamp')) {
+                        record.timestamp = value;
+                    } else if (cleanHeader === 'ue_id') {
+                        record.ue_id = value;
+                    } else if (cleanHeader === 'gnb_id') {
+                        record.gnb_id = value;
+                    } else if (cleanHeader === 'combo') {
+                        record.combo = value;
+                    } else if (cleanHeader.includes('_field') || cleanHeader.includes('_measurement')) {
+                        // Skip these columns
+                        return;
+                    } else {
+                        // This is a data field (like throughput_dl_kbps, rsrp, etc.)
+                        const numericValue = parseFloat(value);
+                        record[cleanHeader] = isNaN(numericValue) ? value : numericValue;
+                    }
+                });
                 
                 console.log('Parsed record:', record);
                 data.push(record);
@@ -270,7 +278,12 @@ class TwinRANTopology {
         this.svg = d3.select('#topology')
             .append('svg')
             .attr('width', this.width)
-            .attr('height', this.height);
+            .attr('height', this.height)
+            .on('click', () => {
+                // Clear selection when clicking on empty space
+                this.svg.selectAll('.node').classed('selected', false);
+                this.hideNodeInfo();
+            });
         
         // Create force simulation
         this.simulation = d3.forceSimulation(this.nodes)
@@ -322,9 +335,14 @@ class TwinRANTopology {
             });
         
         // Add event listeners
-        node.on('mouseover', this.showNodeInfo.bind(this))
-            .on('mouseout', this.hideNodeInfo.bind(this))
-            .on('click', this.showTimeSeries.bind(this));
+        node.on('click', (event, d) => {
+            event.stopPropagation(); // Prevent event from bubbling to SVG
+            // Remove previous selection
+            this.svg.selectAll('.node').classed('selected', false);
+            // Add selection to clicked node
+            d3.select(event.currentTarget).classed('selected', true);
+            this.showNodeInfo(event, d);
+        });
         
         // Update positions on simulation tick
         this.simulation.on('tick', () => {
@@ -375,6 +393,35 @@ class TwinRANTopology {
         nodeDetails.innerHTML = '';
         nodeDetails.appendChild(table);
         
+        // Add metrics button for UEs
+        if (d.type === 'ue') {
+            const metricsButton = document.createElement('button');
+            metricsButton.textContent = 'Show Metrics';
+            metricsButton.className = 'metrics-btn';
+            metricsButton.onclick = () => this.showTimeSeries(event, d);
+            nodeDetails.appendChild(metricsButton);
+            
+            // Add current downlink throughput display using existing data
+            const throughputDiv = document.createElement('div');
+            throughputDiv.className = 'throughput-display';
+            
+            // Get throughput from existing data - look for throughput_dl_kbps field
+            console.log('UE data fields:', Object.keys(d.data));
+            console.log('UE data:', d.data);
+            const throughputValue = d.data['throughput_dl_kbps'] || 0;
+            const throughputInMbps = (throughputValue / 1000).toFixed(2); // Convert kbps to Mbps
+            console.log('Throughput value:', throughputValue);
+            console.log('Throughput in Mbps:', throughputInMbps);
+            
+            throughputDiv.innerHTML = `
+                <h4>Current Downlink Throughput</h4>
+                <div class="throughput-value ${throughputValue >= 0 ? 'success' : 'error'}">
+                    ${throughputValue >= 0 ? `${throughputInMbps} Mbps` : 'No data available'}
+                </div>
+            `;
+            nodeDetails.appendChild(throughputDiv);
+        }
+        
         nodeInfo.classList.remove('hidden');
     }
 
@@ -382,15 +429,20 @@ class TwinRANTopology {
         document.getElementById('nodeInfo').classList.add('hidden');
     }
 
+
     createDataTable(data) {
         const table = document.createElement('table');
         table.className = 'node-details';
         
         const tbody = document.createElement('tbody');
         
+        // Define metadata fields to show (exclude metric fields)
+        const metadataFields = ['ue_id', 'gnb_id', 'timestamp'];
+        
         Object.entries(data).forEach(([key, value]) => {
-            // Skip value, field, and measurement columns
-            if (key === 'value' || key === 'field' || key === 'measurement') {
+            
+            // Only show metadata fields
+            if (!metadataFields.includes(key)) {
                 return;
             }
             

@@ -164,7 +164,7 @@ services:
       - ./ai/.env
     healthcheck:
       test: >
-        CMD-SHELL python -c "import http.client,os,sys;
+        python -c "import http.client,os,sys;
         p=int(os.getenv('PORT','8000'));
         c=http.client.HTTPConnection('127.0.0.1',p,timeout=2);
         c.request('GET','/health');
