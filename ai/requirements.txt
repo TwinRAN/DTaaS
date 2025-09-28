@@ -1,0 +1,12 @@
+Flask>=3.0
+numpy>=1.24
+scikit-learn==1.6.1
+joblib>=1.2
+python-dotenv>=1.0
+waitress>=3.0
+
+flask-cors>=4.0.0
+flasgger>=0.9.7b2
+marshmallow>=3.21
+apispec>=6.6
+apispec-webframeworks>=0.5.2

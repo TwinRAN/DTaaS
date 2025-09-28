@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ML Service Playground</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        max-width: 860px;
+        margin: 40px auto;
+        padding: 24px;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        background: #fff;
+      }
+      h1 { font-size: 1.6rem; margin: 0 0 12px; }
+      label { display: block; margin-top: 1em; font-weight: 600; }
+      input[type="text"], select, button, textarea {
+        width: 100%;
+        padding: 0.6em 0.7em;
+        margin-top: 0.35em;
+        box-sizing: border-box;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+      }
+      textarea { min-height: 200px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+      button { margin-top: 1em; font-size: 1rem; cursor: pointer; }
+      .muted { color: #6b7280; font-size: 0.9rem; margin-top: 4px; }
+      #result {
+        margin-top: 1.2em; padding: 1em; background: #f9fafb;
+        border: 1px dashed #e5e7eb; border-radius: 8px; min-height: 2em;
+      }
+      #log {
+        margin-top: 1.2em; padding: 1em; background: #0b1020; color: #e4e7ef;
+        border-radius: 8px; min-height: 150px; max-height: 260px; overflow: auto;
+        white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        font-size: 0.9rem;
+      }
+      .row { display: grid; gap: 12px; grid-template-columns: 1fr; }
+      @media (min-width: 720px) { .row-2 { grid-template-columns: 1fr 1fr; } }
+      .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .inline > * { flex: 1; }
+      .pill {
+        display: inline-block; padding: 2px 8px; border-radius: 999px;
+        background: #eef2ff; color: #3730a3; font-size: 18px; margin-left: 6px;
+      }
+      .hidden { display: none; }
+      .help { color: #6b7280; font-size: 0.85rem; margin-top: 6px; }
+      .hint { color: #374151; background: #f3f4f6; border-radius: 6px; padding: 8px; margin-top: 8px; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <h1>ML Service Playground <span id="apiStatus" class="pill">checking…</span></h1>
+
+    <!-- API endpoint selector -->
+    <label for="apiEndpoint">Service URL</label>
+    <input id="apiEndpoint" type="text"
+      value="http://127.0.0.1:8000"
+      placeholder="e.g., http://127.0.0.1:8000 or http://localhost:5000"
+      oninput="log('API endpoint set to: ' + this.value); debounceHealth();"
+    />
+    <div class="muted">Requests go to: &lt;API&gt;/models, /api/schema, /api/predict</div>
+
+    <!-- Model Selection -->
+    <label for="modelSelect">Model</label>
+    <select id="modelSelect" onchange="onModelChange()" disabled>
+      <option value="">-- Loading models... --</option>
+    </select>
+    <div class="muted">Lists <code>model_tag</code> values. After selecting, the example request will auto-fill below.</div>
+
+    <!-- Mode Toggle -->
+    <div class="inline" style="margin-top: 1em;">
+      <label style="margin: 0; font-weight: 500; display: inline-flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="useJson" onchange="toggleMode()" />
+        Use JSON editor
+      </label>
+    </div>
+
+    <!-- JSON Mode -->
+    <div id="jsonMode" class="hidden">
+      <label for="featuresJson">Features JSON</label>
+      <textarea id="featuresJson" placeholder='{"feature_name": value, ...}' disabled></textarea>
+      <div class="inline">
+        <button id="loadExampleBtn" onclick="loadExample()" disabled>↻ Load Example from /api/schema</button>
+        <button id="submitBtnJson" onclick="getPrediction()" disabled>▶ Get Prediction</button>
+      </div>
+    </div>
+
+    <!-- Form Mode -->
+    <div id="formMode">
+      <div class="row row-2">
+        <div>
+          <label for="noise1">Noise #1 (dB)</label>
+          <select id="noise1" disabled>
+            <option value="-90">-90</option>
+            <option value="-100" selected>-100</option>
+            <option value="-110">-110</option>
+            <option value="-120">-120</option>
+          </select>
+        </div>
+        <div>
+          <label for="noise2">Noise #2 (dB)</label>
+          <select id="noise2" disabled>
+            <option value="-90">-90</option>
+            <option value="-100">-100</option>
+            <option value="-110" selected>-110</option>
+            <option value="-120">-120</option>
+          </select>
+        </div>
+      </div>
+
+      <label for="throughputs">Throughput values (newest → oldest, comma-separated)</label>
+      <input id="throughputs" type="text" placeholder="e.g. 6031.41, 5860.28, 6051.5" disabled />
+      <div class="hint">
+        We’ll map values to history features like <code>DL_hist_t_minus_0</code> = newest,
+        <code>t_minus_1</code> = next, etc. If your model uses another naming
+        (e.g. <code>DL_hist_0</code>), 0 is also treated as newest. Example: <code>[DL_hist_t_minus_0, DL_hist_t_minus_1, ...]</code>
+      </div>
+
+      <div class="inline">
+        <button id="submitBtnForm" onclick="getPrediction()" disabled>▶ Get Prediction</button>
+      </div>
+    </div>
+
+    <div id="result">Prediction will appear here…</div>
+    <div id="log" aria-live="polite"></div>
+
+    <script>
+      function ts() {
+        const d = new Date();
+        const pad = (n) => n.toString().padStart(2, "0");
+        return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${d.getMilliseconds().toString().padStart(3, "0")}`;
+      }
+      function log(message, obj) {
+        const el = document.getElementById("log");
+        const head = `[${ts()}] ${message}`;
+        if (obj !== undefined) {
+          try { el.textContent += head + " " + JSON.stringify(obj) + "\n"; }
+          catch { el.textContent += head + " (unserializable object)\n"; }
+        } else { el.textContent += head + "\n"; }
+        el.scrollTop = el.scrollHeight;
+        console.log(head, obj ?? "");
+      }
+      function normalizedEndpoint() {
+        const raw = document.getElementById("apiEndpoint").value.trim();
+        return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+      }
+
+      function setHealthyState(healthy) {
+        const badge = document.getElementById("apiStatus");
+        badge.textContent = healthy ? "online" : "offline";
+        badge.style.background = healthy ? "#ecfdf5" : "#fef2f2";
+        badge.style.color = healthy ? "#065f46" : "#991b1b";
+
+        const ids = [
+          "modelSelect",
+          "featuresJson", "loadExampleBtn", "submitBtnJson",
+          "noise1", "noise2", "throughputs", "submitBtnForm"
+        ];
+        ids.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.disabled = !healthy;
+        });
+      }
+
+      function toggleMode() {
+        const checked = document.getElementById("useJson").checked;
+        document.getElementById("jsonMode").classList.toggle("hidden", !checked);
+        document.getElementById("formMode").classList.toggle("hidden", checked);
+        log("Mode switched to " + (checked ? "JSON editor" : "Form mode"));
+      }
+
+      let healthTimeout = null;
+      function debounceHealth() {
+        if (healthTimeout) clearTimeout(healthTimeout);
+        healthTimeout = setTimeout(init, 350);
+      }
+
+      async function checkApiHealth() {
+        const endpointBase = normalizedEndpoint();
+        try {
+          const res = await fetch(`${endpointBase}/health`);
+          const ok = res.ok;
+          setHealthyState(ok);
+          log(ok ? "API is healthy" : "API health check failed");
+          return ok;
+        } catch (e) {
+          setHealthyState(false);
+          log("API health check error", e.message || e);
+          return false;
+        }
+      }
+
+      async function fetchModels() {
+        const endpointBase = normalizedEndpoint();
+        const sel = document.getElementById("modelSelect");
+        sel.innerHTML = '<option value="">-- Loading models... --</option>';
+
+        const healthy = await checkApiHealth();
+        if (!healthy) throw new Error("API not healthy");
+
+        const res = await fetch(`${endpointBase}/models`);
+        if (!res.ok) throw new Error(`GET /models failed: ${res.status}`);
+        const data = await res.json();
+
+        // Expected shape: { models: [{ model_tag, model, window_size }, ...] }
+        const items = Array.isArray(data.models) ? data.models : [];
+        if (items.length === 0) throw new Error("No models available");
+
+        sel.innerHTML = "";
+        items.forEach(({ model_tag, model, window_size }) => {
+          const opt = document.createElement("option");
+          opt.value = model_tag;
+          opt.textContent = `${model_tag} (${model || "?"}, win=${window_size ?? "?"})`;
+          sel.appendChild(opt);
+        });
+
+        if (sel.options.length > 0) {
+          sel.selectedIndex = 0;
+          log("Selected model", sel.value);
+        }
+      }
+
+      async function fetchSchema(modelTag) {
+        const endpointBase = normalizedEndpoint();
+        const res = await fetch(`${endpointBase}/api/schema?model=${encodeURIComponent(modelTag)}`);
+        if (!res.ok) throw new Error(`GET /api/schema failed: ${res.status}`);
+        return await res.json();
+      }
+
+      async function onModelChange() {
+        const modelTag = document.getElementById("modelSelect").value;
+        if (!modelTag) return;
+        try {
+          const schema = await fetchSchema(modelTag);
+          window.__featureNames = schema.feature_names || [];
+          window.__windowSize = schema.window_size || 0;
+
+          // JSON mode: preload example
+          const example = (schema && schema.example_request && schema.example_request.features) || {};
+          document.getElementById("featuresJson").value = JSON.stringify(example, null, 2);
+
+          // Form mode: preload hints
+          const newestFirstValues = deriveNewestToOldestFromFeatures(example);
+          const throughputFormText = newestFirstValues.length ? newestFirstValues.join(", ") : "e.g. 6031.41, 5860.28, 6051.5";
+          document.getElementById("throughputs").placeholder = throughputFormText;
+          document.getElementById("throughputs").value = throughputFormText;
+          
+          console.log(throughputFormText);
+
+          log("Loaded schema", schema);
+        } catch (e) {
+          log("Failed to fetch schema", e.message || e);
+        }
+      }
+
+      function deriveNewestToOldestFromFeatures(features) {
+        // Extract hist features and order by lag ascending (0=newest)
+        if (!features) return [];
+        const entries = Object.entries(features).filter(([k]) => /hist/i.test(k));
+        const withLag = entries.map(([name, val]) => {
+          const m = name.match(/(?:t_minus_|_)(\d+)\b/i);
+          const lag = m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+          return { name, val: Number(val), lag };
+        });
+        withLag.sort((a, b) => a.lag - b.lag);
+        return withLag.map(x => x.val);
+      }
+
+      function buildFeaturesFromForm(featureNames) {
+        const f = {};
+        const noise1 = parseFloat(document.getElementById("noise1").value);
+        let noise2 = document.getElementById("noise2").value;
+        noise2 = noise2 === "" ? noise1 : parseFloat(noise2);
+
+        // Parse throughput CSV (newest → oldest)
+        const raw = document.getElementById("throughputs").value.trim();
+        const csv = raw ? raw.split(",").map(s => Number(s.trim())).filter(v => !Number.isNaN(v)) : [];
+        const newestToOldest = csv;
+
+        // Identify noise features & hist features
+        const noiseIdx = [];
+        const histIdx = [];
+        featureNames.forEach((name, i) => {
+          const lname = name.toLowerCase();
+          if (lname.startsWith("noise")) noiseIdx.push({ name, i });
+          else if (lname.includes("hist")) histIdx.push({ name, i });
+        });
+
+        // Map noise
+        const noises = [noise1, noise2];
+        noiseIdx.forEach((slot, k) => {
+          f[slot.name] = noises[Math.min(k, noises.length - 1)];
+        });
+
+        // Map history: determine lag from name (prefer t_minus_N or trailing _N). 0 is newest.
+        const histWithLag = histIdx.map(h => {
+          const m = h.name.match(/(?:t_minus_|_)(\d+)\b/i);
+          const lag = m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+          return { ...h, lag };
+        }).sort((a, b) => a.lag - b.lag);
+
+        histWithLag.forEach((h) => {
+          const val = newestToOldest[h.lag];
+          if (val !== undefined) {
+            f[h.name] = Number(val);
+          } else {
+            // If user didn't provide enough values, pad with last known or 0
+            f[h.name] = newestToOldest.length ? Number(newestToOldest[newestToOldest.length - 1]) : 0.0;
+          }
+        });
+
+        // Fill any remaining features (non-noise, non-hist) with 0.0
+        featureNames.forEach((name) => {
+          if (!(name in f)) f[name] = 0.0;
+        });
+
+        return f;
+      }
+
+      async function loadExample() { await onModelChange(); }
+
+      async function getPrediction() {
+        const endpointBase = normalizedEndpoint();
+        const url = `${endpointBase}/api/predict`;
+        const modelTag = document.getElementById("modelSelect").value;
+
+        if (!modelTag) {
+          document.getElementById("result").innerText = "Select a model first.";
+          return;
+        }
+
+        let features;
+        const useJson = document.getElementById("useJson").checked;
+
+        if (useJson) {
+          const raw = document.getElementById("featuresJson").value;
+          try {
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+              throw new Error("Features must be a JSON object.");
+            }
+            features = parsed;
+          } catch (e) {
+            document.getElementById("result").innerText = "Invalid Features JSON: " + e.message;
+            log("Invalid features JSON", e.message);
+            return;
+          }
+        } else {
+          const fnames = Array.isArray(window.__featureNames) ? window.__featureNames : [];
+          if (!fnames.length) {
+            document.getElementById("result").innerText = "Model feature names missing; try reloading schema.";
+            return;
+          }
+          features = buildFeaturesFromForm(fnames);
+        }
+
+        const body = { model: modelTag, features };
+
+        document.getElementById("result").innerText = "Sending request…";
+        log("POST /api/predict", { url, body });
+
+        try {
+          const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+
+          const rawText = await response.text();
+          log(`Response ${response.status} ${response.statusText}`, rawText);
+
+          let data;
+          try { data = JSON.parse(rawText); }
+          catch (e) { throw new Error("Response is not valid JSON: " + e.message); }
+
+          if (!response.ok) {
+            throw new Error(data && data.error ? data.error : response.statusText);
+          }
+          if (!data || typeof data.prediction !== "number") {
+            throw new Error("Response JSON missing numeric 'prediction'.");
+          }
+
+          const predictionRounded = Number(data.prediction).toFixed(6);
+          const used = data.model_tag || "unknown";
+          document.getElementById("result").innerHTML =
+            `<strong>Model:</strong> ${used}<br><strong>Prediction:</strong> ${predictionRounded}`;
+          log("Displayed prediction", { model_tag: used, prediction: predictionRounded });
+        } catch (err) {
+          const msg = err && err.message ? err.message : String(err);
+          document.getElementById("result").innerText = "Error: " + msg;
+          log("Error occurred", msg);
+        }
+      }
+
+      async function init() {
+        // default mode: Form mode
+        document.getElementById("useJson").checked = false;
+        toggleMode();
+
+        try {
+          await fetchModels();
+          await onModelChange(); // preload example for first model (also sets placeholders)
+        } catch (e) {
+          log("Initialization error", e.message || e);
+        }
+      }
+
+      window.addEventListener("DOMContentLoaded", init);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "model_tag": "DecisionTreeRegressor_win03",
+  "model": "DecisionTreeRegressor",
+  "window_size": 3,
+  "parameters": {
+    "ccp_alpha": 0.0,
+    "criterion": "squared_error",
+    "max_depth": 5,
+    "max_features": "sqrt",
+    "max_leaf_nodes": null,
+    "min_impurity_decrease": 0.0,
+    "min_samples_leaf": 1,
+    "min_samples_split": 2,
+    "min_weight_fraction_leaf": 0.0,
+    "monotonic_cst": null,
+    "random_state": 1234,
+    "splitter": "best"
+  },
+  "feature_names": [
+    "noise_target",
+    "noise_other_1",
+    "DL_hist_t_minus_0",
+    "DL_hist_t_minus_1",
+    "DL_hist_t_minus_2"
+  ],
+  "training_features": 5,
+  "scaling": {
+    "window_scale_mode": "window_mean",
+    "noise_scaling": {
+      "min_abs_db": 50.0,
+      "max_abs_db": 150.0
+    }
+  },
+  "random_state": 1234
+}
