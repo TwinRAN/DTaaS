@@ -420,6 +420,48 @@ class TwinRANTopology {
                 </div>
             `;
             nodeDetails.appendChild(throughputDiv);
+            
+            // Add ML prediction form
+            const mlFormDiv = document.createElement('div');
+            mlFormDiv.className = 'ml-prediction-form';
+            mlFormDiv.innerHTML = `
+                <h4>ML Prediction</h4>
+                <div class="form-group">
+                    <label for="model-${d.id}">Model</label>
+                    <select id="model-${d.id}" class="ml-input">
+                        <option value="">Loading models...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="noise1-${d.id}">Noise #1 (dB)</label>
+                    <select id="noise1-${d.id}" class="ml-input">
+                        <option value="-90">-90</option>
+                        <option value="-100" selected>-100</option>
+                        <option value="-110">-110</option>
+                        <option value="-120">-120</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="noise2-${d.id}">Noise #2 (dB)</label>
+                    <select id="noise2-${d.id}" class="ml-input">
+                        <option value="-90">-90</option>
+                        <option value="-100">-100</option>
+                        <option value="-110" selected>-110</option>
+                        <option value="-120">-120</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="throughputs-${d.id}">Throughput values (newest → oldest, comma-separated)</label>
+                    <input id="throughputs-${d.id}" type="text" class="ml-input" placeholder="Loading throughput history..." />
+                    <div class="help-text">We'll map values to history features like DL_hist_t_minus_0 = newest, t_minus_1 = next, etc.</div>
+                </div>
+                <button id="submit-ml-${d.id}" class="ml-submit-btn" disabled>Get ML Prediction</button>
+                <div id="ml-result-${d.id}" class="ml-result"></div>
+            `;
+            nodeDetails.appendChild(mlFormDiv);
+            
+            // Pre-fill throughput values and set up submit handler
+            this.setupMLForm(d);
         }
         
         nodeInfo.classList.remove('hidden');
@@ -427,6 +469,189 @@ class TwinRANTopology {
 
     hideNodeInfo() {
         document.getElementById('nodeInfo').classList.add('hidden');
+    }
+
+    async setupMLForm(ueNode) {
+        const ueId = ueNode.displayId || ueNode.data.ue_id;
+        const modelSelect = document.getElementById(`model-${ueNode.id}`);
+        const throughputInput = document.getElementById(`throughputs-${ueNode.id}`);
+        const submitBtn = document.getElementById(`submit-ml-${ueNode.id}`);
+        const resultDiv = document.getElementById(`ml-result-${ueNode.id}`);
+        
+        // Load available models
+        try {
+            const models = await this.fetchAvailableModels();
+            modelSelect.innerHTML = '';
+            
+            if (models.length > 0) {
+                models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.model_tag;
+                    option.textContent = `${model.model_tag} (${model.model || '?'}, win=${model.window_size ?? '?'})`;
+                    modelSelect.appendChild(option);
+                });
+                
+                // Select first model by default
+                modelSelect.selectedIndex = 0;
+                submitBtn.disabled = false;
+            } else {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No models available';
+                modelSelect.appendChild(option);
+            }
+        } catch (error) {
+            console.error('Error fetching models:', error);
+            modelSelect.innerHTML = '<option value="">Error loading models</option>';
+        }
+        
+        // Fetch throughput history for this UE
+        try {
+            const throughputHistory = await this.fetchThroughputHistory(ueId);
+            if (throughputHistory.length > 0) {
+                // Take the last 7 values (newest to oldest)
+                const last7Values = throughputHistory.slice(-7).reverse();
+                throughputInput.value = last7Values.join(', ');
+                throughputInput.placeholder = 'e.g. 6031.41, 5860.28, 6051.5';
+            } else {
+                throughputInput.placeholder = 'No throughput history available';
+                throughputInput.disabled = true;
+            }
+        } catch (error) {
+            console.error('Error fetching throughput history:', error);
+            throughputInput.placeholder = 'Error loading throughput history';
+            throughputInput.disabled = true;
+        }
+        
+        // Set up model change handler
+        modelSelect.onchange = () => {
+            submitBtn.disabled = !modelSelect.value;
+        };
+        
+        // Set up submit handler
+        submitBtn.onclick = () => this.submitMLPrediction(ueNode);
+    }
+
+    async fetchAvailableModels() {
+        try {
+            const response = await fetch('/api/models');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            return data.models || [];
+        } catch (error) {
+            console.error('Error fetching models:', error);
+            return [];
+        }
+    }
+
+    async fetchThroughputHistory(ueId) {
+        const query = `
+            from(bucket: "${this.config.influxdb.bucket}")
+                |> range(start: -1h, stop: now())
+                |> filter(fn: (r) => r.ue_id == "${ueId}" and r._field == "throughput_dl_kbps")
+                |> sort(columns: ["_time"])
+                |> limit(n: 20)
+        `;
+
+        const response = await fetch('/api/v2/query', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ query })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.text();
+        const parsedData = this.parseFluxResponse(data);
+        
+        // Extract throughput values
+        return parsedData.map(record => record.value || 0).filter(val => val > 0);
+    }
+
+    async submitMLPrediction(ueNode) {
+        const ueId = ueNode.displayId || ueNode.data.ue_id;
+        const submitBtn = document.getElementById(`submit-ml-${ueNode.id}`);
+        const resultDiv = document.getElementById(`ml-result-${ueNode.id}`);
+        const modelSelect = document.getElementById(`model-${ueNode.id}`);
+        const noise1 = document.getElementById(`noise1-${ueNode.id}`).value;
+        const noise2 = document.getElementById(`noise2-${ueNode.id}`).value;
+        const throughputs = document.getElementById(`throughputs-${ueNode.id}`).value;
+        
+        const selectedModel = modelSelect.value;
+        if (!selectedModel) {
+            resultDiv.innerHTML = '<div class="prediction-error"><strong>Error:</strong> Please select a model</div>';
+            return;
+        }
+        
+        // Disable submit button and show loading
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Getting Prediction...';
+        resultDiv.innerHTML = 'Sending request...';
+        
+        try {
+            // Parse throughput values
+            const throughputValues = throughputs.split(',').map(s => parseFloat(s.trim())).filter(v => !isNaN(v));
+            
+            // Build features object similar to MockFrontend
+            const features = {
+                noise1: parseFloat(noise1),
+                noise2: parseFloat(noise2)
+            };
+            
+            // Add throughput history features (assuming 7 values for t_minus_0 to t_minus_6)
+            for (let i = 0; i < 7; i++) {
+                const value = throughputValues[i] || (throughputValues.length > 0 ? throughputValues[throughputValues.length - 1] : 0);
+                features[`DL_hist_t_minus_${i}`] = value;
+            }
+            
+            // Send prediction request to modelapi via proxy
+            const response = await fetch('/api/predict', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: selectedModel,
+                    features: features
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data && typeof data.prediction === 'number') {
+                const predictionRounded = Number(data.prediction).toFixed(6);
+                resultDiv.innerHTML = `
+                    <div class="prediction-success">
+                        <strong>Model:</strong> ${data.model_tag || selectedModel}<br>
+                        <strong>Prediction:</strong> ${predictionRounded}
+                    </div>
+                `;
+            } else {
+                throw new Error('Invalid response format');
+            }
+            
+        } catch (error) {
+            console.error('ML prediction error:', error);
+            resultDiv.innerHTML = `
+                <div class="prediction-error">
+                    <strong>Error:</strong> ${error.message}
+                </div>
+            `;
+        } finally {
+            // Re-enable submit button
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Get ML Prediction';
+        }
     }
 
 

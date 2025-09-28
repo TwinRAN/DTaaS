@@ -87,6 +87,54 @@ app.get('/api/config', (req, res) => {
     });
 });
 
+// Proxy endpoints for modelapi
+app.get('/api/models', async (req, res) => {
+    try {
+        const response = await fetch('http://modelapi:8000/models');
+        
+        if (!response.ok) {
+            return res.status(response.status).json({ 
+                error: `Model API error: ${response.status}`,
+                details: await response.text()
+            });
+        }
+
+        const data = await response.json();
+        res.json(data);
+
+    } catch (error) {
+        console.error('Model API proxy error:', error);
+        res.status(500).json({ error: 'Failed to fetch models from modelapi' });
+    }
+});
+
+app.post('/api/predict', async (req, res) => {
+    try {
+        const response = await fetch('http://modelapi:8000/api/predict', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(req.body)
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            return res.status(response.status).json({ 
+                error: `Model API error: ${response.status}`,
+                details: errorText
+            });
+        }
+
+        const data = await response.json();
+        res.json(data);
+
+    } catch (error) {
+        console.error('Model API proxy error:', error);
+        res.status(500).json({ error: 'Failed to get prediction from modelapi' });
+    }
+});
+
 // Debug endpoint to see what data exists
 app.get('/api/debug', async (req, res) => {
     try {
