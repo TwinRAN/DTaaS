@@ -633,7 +633,7 @@ class TwinRANTopology {
             from(bucket: "${this.config.influxdb.bucket}")
                 |> range(start: -1h, stop: now())
                 |> filter(fn: (r) => r.ue_id == "${ueId}" and r._field == "throughput_dl_kbps")
-                |> sort(columns: ["_time"])
+                |> sort(columns: ["_time"], desc: true)
                 |> limit(n: 20)
         `;
 
@@ -812,8 +812,7 @@ class TwinRANTopology {
             from(bucket: "${this.config.influxdb.bucket}")
                 |> range(start: ${this.getTimeRangeStart(timeRange)}, stop: now())
                 |> filter(fn: (r) => r.ue_id == "${ueId}")
-                |> sort(columns: ["_time"])
-                |> limit(n: 100)
+                |> sort(columns: ["_time"], desc: true)
         `;
 
         console.log('Time series query:', query);
