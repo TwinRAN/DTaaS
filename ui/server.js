@@ -87,10 +87,10 @@ app.get('/api/config', (req, res) => {
     });
 });
 
-// Proxy endpoints for modelapi
+// Proxy endpoints for aiaas
 app.get('/api/models', async (req, res) => {
     try {
-        const response = await fetch('http://modelapi:8000/models');
+        const response = await fetch('http://aiaas:8000/models');
         
         if (!response.ok) {
             return res.status(response.status).json({ 
@@ -104,13 +104,13 @@ app.get('/api/models', async (req, res) => {
 
     } catch (error) {
         console.error('Model API proxy error:', error);
-        res.status(500).json({ error: 'Failed to fetch models from modelapi' });
+        res.status(500).json({ error: 'Failed to fetch models from aiaas' });
     }
 });
 
 app.post('/api/predict', async (req, res) => {
     try {
-        const response = await fetch('http://modelapi:8000/api/predict', {
+        const response = await fetch('http://aiaas:8000/api/predict', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -131,7 +131,7 @@ app.post('/api/predict', async (req, res) => {
 
     } catch (error) {
         console.error('Model API proxy error:', error);
-        res.status(500).json({ error: 'Failed to get prediction from modelapi' });
+        res.status(500).json({ error: 'Failed to get prediction from aiaas' });
     }
 });
 

@@ -1,20 +1,21 @@
-# TwinRAN - a DT-enabled AI optimization for 6G
+# TwinRAN - a DT-enabled AI-driven uplink performance analysis for 6G
 
 <!-- TOC start (generated with https://github.com/derlin/bitdowntoc) -->
 
 - [System Setup (Rocky 9)](#system-setup-rocky-9)
    * [Install Docker CE](#install-docker-ce)
    * [SCTP](#sctp)
-- [Clone all the projects](#clone-all-the-projects)
-- [Local Development/Build/Run of an xApp (Complex Configuration)](#local-developmentbuildrun-of-an-xapp-complex-configuration)
+- [Testbed Setup](#testbed-setup)
+- [TwinRAN Setup](#twinran-setup)
+- [xApp Containerized Build](#xapp-containerized-build)
+- [xApp System Build (with Development)](#xapp-system-build-with-development)
    * [Install Python 3.10 for FlexRIC](#install-python-310-for-flexric)
-   * [Install FlexRIC build requirements](#install-flexric-build-requirements)
+   * [Install FlexRIC's other build requirements](#install-flexrics-other-build-requirements)
    * [Install Compiler Cache](#install-compiler-cache)
    * [Install GCC13](#install-gcc13)
    * [Install libraries for the xApp](#install-libraries-for-the-xapp)
    * [Install Language Server](#install-language-server)
    * [Build and Run FlexRIC with xApp](#build-and-run-flexric-with-xapp)
-- [Containerized Development/Build/Run (Simple Configuration)](#containerized-developmentbuildrun-simple-configuration)
 
 <!-- TOC end -->
 
@@ -63,41 +64,70 @@ udp_tunnel             36864  1 sctp
 libcrc32c              12288  5 nf_conntrack,nf_nat,nf_tables,xfs,sctp
 ```
 
-<!-- TOC --><a name="clone-all-the-projects"></a>
-## Clone all the projects and run RAN and Core Networks
+<!-- TOC --><a name="testbed-setup"></a>
+## Testbed Setup
 
-TwinRAN is an application that runs on openairinterface and interacts with a Radio Access Network (RAN) Intelligent Controller (RIC) called FlexRIC.
+TwinRAN is an application that runs on openairinterface (5G RAN and Core) and interacts with a Radio Access Network (RAN) Intelligent Controller (RIC) called FlexRIC through standardized xApp messages.
 
-Setup openairinterface.
+Set up openairinterface.
 
 ```sh
-git clone git@gitlab.btsgrp.com:khayal.huseynov/openairinterface5g.git
+git clone https://github.com/TwinRAN/openairinterface5G
 cd openairinterface5g && git checkout twinran
 cd ci-scripts/yaml_files/bts/
 ./setup.sh # executes services in docker-compose.yml step-by-step
 cd - && cd ..
 ```
 
-Setup Flexric project for further xApp development
+<!-- TOC --><a name="twinran-setup"></a>
+## TwinRAN Setup
+
+Set up TwinRAN and run everything
 
 ```sh
-git clone git@gitlab.btsgrp.com:khayal.huseynov/flexric.git
-cd flexric && git checkout twinran && cd ..
-```
-
-Setup TwinRAN and run everything except `xapp_kpm_twinran`
-
-```sh
-git clone git@gitlab.btsgrp.com:khayal.huseynov/twinran.git
+git clone https://github.com/TwinRAN/DTaaS twinran
 cd twinran
-docker compose up -d $(docker compose config --services | grep -v xapp_kpm_twinran)
+docker compose up -d
 cd ..
 ```
 
-<!-- TOC --><a name="local-developmentbuildrun-of-an-xapp-complex-configuration"></a>
-## Local Development/Build of an xApp (Complex Configuration)
+<!-- TOC --><a name="xapp-containerized-build"></a>
+## xApp Containerized Build
 
-This part is only necessary if you want to get IDE functionalities (syntax highlighting etc.) in your development environment. It is highly recommended to create a Virtual Machine to run these commands as they will install a lot of system-level packages.
+Setup Flexric project for further xApp development
+
+```sh
+git clone git@github.com:TwinRAN/Flexric.git
+cd flexric && git checkout twinran && cd ..
+```
+
+After code changes to TwinRAN xApp, run the following to build a new image
+
+```sh
+cd flexric
+rm -rf build && docker build -f docker/Dockerfile.flexric.ubuntu -t ghcr.io/twinran/xapp_kpm_twinran:latest . --progress=plain 2>&1 | tee build.log
+cd ..
+```
+
+Restart the xApp
+
+```sh
+cd twinran
+docker compose up -d xapp_kpm_twinran
+cd ..
+```
+
+<!-- TOC --><a name="xapp-system-build-with-development"></a>
+## xApp System Build (with Development)
+
+This is only necessary if you want to get IDE functionalities (syntax highlighting etc.) in your development environment. It is highly recommended to create a Virtual Machine to run these commands as they will install a lot of system-level packages.
+
+Setup Flexric project for further xApp development
+
+```sh
+git clone git@github.com:TwinRAN/Flexric.git
+cd flexric && git checkout twinran && cd ..
+```
 
 <!-- TOC --><a name="install-python-310-for-flexric"></a>
 ### Install Python 3.10 for FlexRIC
@@ -122,8 +152,8 @@ exec "$SHELL"
 pyenv install 3.10
 ```
 
-<!-- TOC --><a name="install-flexric-build-requirements"></a>
-### Install FlexRIC build requirements
+<!-- TOC --><a name="install-flexrics-other-build-requirements"></a>
+### Install FlexRIC's other build requirements
 
 Install the requirements
 
@@ -177,10 +207,10 @@ scl enable gcc-toolset-13 bash
 <!-- TOC --><a name="install-libraries-for-the-xapp"></a>
 ### Install libraries for the xApp
 
-This custom xApp for TwinRAN needs a library for Kafka connection
+This custom xApp for TwinRAN needs a library for Kafka connection and a library for wrapping callbacks
 
 ```sh
-dnf --enablerepo=devel install -y librdkafka-devel
+dnf --enablerepo=devel install -y librdkafka-devel ffcall-devel
 ```
 
 <!-- TOC --><a name="install-language-server"></a>
@@ -195,7 +225,7 @@ dnf install -y clangd
 <!-- TOC --><a name="build-and-run-flexric-with-xapp"></a>
 ### Build and Run FlexRIC with xApp
 
-Build FlexRIC with our custom xApp
+Here the containerized build guide above can also be used. For local, use the following command to build our custom xApp with FlexRIC headers
 
 ```sh
 cd flexric
@@ -207,24 +237,5 @@ cd ..
 To run the application in your shell, execute the following
 
 ```sh
-flexric/examples/xApp/c/monitor/xapp_kpm_kafka -p /usr/local/lib64/flexric/ # default looks at lib instead of lib64
-```
-
-<!-- TOC --><a name="containerized-developmentbuildrun-simple-configuration"></a>
-## Containerized Development (Simple Configuration)
-
-After code changes to TwinRAN, just run the following
-
-```sh
-cd twinran
-docker build -f docker/Dockerfile.flexric.ubuntu -t xapp_kpm_twinran_ubuntu:latest . --progress=plain 2>&1 | tee build.log
-cd ..
-```
-
-Restart `xapp_kpm_twinran`
-
-```sh
-cd twinran
-docker compose up -d xapp_kpm_twinran
-cd ..
+flexric/examples/xApp/c/monitor/xapp_kpm_twinran -p /usr/local/lib64/flexric/ # default looks at lib instead of lib64
 ```

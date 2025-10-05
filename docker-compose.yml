@@ -117,7 +117,8 @@ services:
       - influxdb2-admin-token
     logging: *default-logging
 
-  ui:
+  digital-twin-dashboard:
+    image: ghcr.io/twinran/digital-twin-dashboard:latest
     build:
       context: ./ui
       dockerfile: Dockerfile
@@ -136,12 +137,12 @@ services:
     depends_on:
       influxdb:
         condition: service_healthy
-      modelapi:
+      aiaas:
         condition: service_healthy
     logging: *default-logging
 
   xapp_kpm_twinran:
-    image: xapp_kpm_twinran_ubuntu:latest
+    image: ghcr.io/twinran/xapp_kpm_twinran:latest # Check README for build instructions
     logging: *default-logging
     command: "stdbuf -o0 -e0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_twinran"
     depends_on:
@@ -153,9 +154,9 @@ services:
       twinran:
     volumes:
       - ./conf/flexric.conf:/usr/local/etc/flexric/flexric.conf
-      # - bts_sharedXappLibs:/usr/local/lib/flexric/
 
-  modelapi:
+  aiaas:
+    image: ghcr.io/twinran/aiaas:latest
     build: ./ai
     container_name: twinran-aiaas
     ports:
@@ -184,9 +185,6 @@ services:
           path: ./ai/ml-models
           target: /app/ml-models
 
-# volumes:
-#   bts_sharedXappLibs:
-#     external: true
 
 secrets:
   influxdb2-admin-username:

@@ -176,11 +176,17 @@ class TwinRANTopology {
                     if (cleanHeader.includes('_time') || cleanHeader.includes('timestamp')) {
                         record.timestamp = value;
                     } else if (cleanHeader === 'ue_id') {
-                        record.ue_id = value;
+                        // Clean up any carriage return characters
+                        record.ue_id = value.replace(/\r/g, '');
                     } else if (cleanHeader === 'gnb_id') {
                         record.gnb_id = value;
                     } else if (cleanHeader === 'combo') {
                         record.combo = value;
+                    } else if (cleanHeader === '_value') {
+                        // Handle the _value field specifically
+                        const numericValue = parseFloat(value);
+                        record._value = isNaN(numericValue) ? 0 : numericValue;
+                        record.value = record._value; // Also set as value for compatibility
                     } else if (cleanHeader.includes('_field') || cleanHeader.includes('_measurement')) {
                         // Skip these columns
                         return;
@@ -508,19 +514,24 @@ class TwinRANTopology {
         // Fetch throughput history for this UE
         try {
             const throughputHistory = await this.fetchThroughputHistory(ueId);
+            console.log('Throughput history:', throughputHistory);
             if (throughputHistory.length > 0) {
                 // Take the last 7 values (newest to oldest)
                 const last7Values = throughputHistory.slice(-7).reverse();
                 throughputInput.value = last7Values.join(', ');
                 throughputInput.placeholder = 'e.g. 6031.41, 5860.28, 6051.5';
             } else {
-                throughputInput.placeholder = 'No throughput history available';
-                throughputInput.disabled = true;
+                // If no data, use some default values for testing
+                const defaultValues = [0, 0, 0, 0, 0, 0, 0];
+                throughputInput.value = defaultValues.join(', ');
+                throughputInput.placeholder = 'No throughput data found, using zeros. Enter real values manually if available.';
             }
         } catch (error) {
             console.error('Error fetching throughput history:', error);
-            throughputInput.placeholder = 'Error loading throughput history';
-            throughputInput.disabled = true;
+            // Use default values even on error
+            const defaultValues = [0, 0, 0, 0, 0, 0, 0];
+            throughputInput.value = defaultValues.join(', ');
+            throughputInput.placeholder = 'Error loading throughput history, using zeros. Enter real values manually.';
         }
         
         // Set up model change handler
@@ -544,6 +555,77 @@ class TwinRANTopology {
             console.error('Error fetching models:', error);
             return [];
         }
+    }
+
+    parseFluxResponseForTimeSeries(fluxData) {
+        const lines = fluxData.split('\n');
+        const data = [];
+        
+        // Skip header lines
+        let dataStarted = false;
+        let headerLine = null;
+        
+        for (const line of lines) {
+            console.log('Processing time series line:', line);
+            if (line.startsWith('#') || line.trim() === '') continue;
+            
+            // Check if this is the data header line
+            if (line.includes('_time') || line.includes('_value')) {
+                dataStarted = true;
+                headerLine = line;
+                console.log('Found time series header line:', headerLine);
+                continue;
+            }
+            
+            if (!dataStarted) continue;
+            
+            const parts = line.split(',');
+            if (parts.length < 6) continue;
+            
+            try {
+                // Parse the Flux CSV format for time series (non-pivoted)
+                const headers = headerLine.split(',');
+                console.log('Time series headers:', headers);
+                
+                const record = {};
+                
+                // Map each column to its value
+                headers.forEach((header, index) => {
+                    const value = parts[index] || '';
+                    const cleanHeader = header.trim();
+                    
+                    // Convert numeric fields to numbers
+                    if (cleanHeader.includes('_time') || cleanHeader.includes('timestamp')) {
+                        record.timestamp = value;
+                    } else if (cleanHeader === 'ue_id') {
+                        // Clean up any carriage return characters
+                        record.ue_id = value.replace(/\r/g, '');
+                    } else if (cleanHeader === 'gnb_id') {
+                        record.gnb_id = value;
+                    } else if (cleanHeader === '_field') {
+                        record.field = value;
+                    } else if (cleanHeader === '_value') {
+                        // Handle the _value field specifically
+                        const numericValue = parseFloat(value);
+                        record.value = isNaN(numericValue) ? 0 : numericValue;
+                    } else if (cleanHeader === '_measurement') {
+                        record.measurement = value;
+                    } else {
+                        // Other fields
+                        const numericValue = parseFloat(value);
+                        record[cleanHeader] = isNaN(numericValue) ? value : numericValue;
+                    }
+                });
+                
+                console.log('Parsed time series record:', record);
+                data.push(record);
+            } catch (e) {
+                console.warn('Failed to parse time series line:', line, e);
+            }
+        }
+        
+        console.log('Total parsed time series records:', data.length);
+        return data;
     }
 
     async fetchThroughputHistory(ueId) {
@@ -570,8 +652,14 @@ class TwinRANTopology {
         const data = await response.text();
         const parsedData = this.parseFluxResponse(data);
         
-        // Extract throughput values
-        return parsedData.map(record => record.value || 0).filter(val => val > 0);
+        console.log('Raw parsed data for throughput history:', parsedData);
+        
+        // Extract throughput values - include 0 values and handle the _value field
+        return parsedData.map(record => {
+            // Use _value field if available, otherwise use value
+            const throughputValue = record._value !== undefined ? record._value : (record.value || 0);
+            return parseFloat(throughputValue);
+        });
     }
 
     async submitMLPrediction(ueNode) {
@@ -598,10 +686,10 @@ class TwinRANTopology {
             // Parse throughput values
             const throughputValues = throughputs.split(',').map(s => parseFloat(s.trim())).filter(v => !isNaN(v));
             
-            // Build features object similar to MockFrontend
+            // Build features object with correct field names
             const features = {
-                noise1: parseFloat(noise1),
-                noise2: parseFloat(noise2)
+                noise_target: parseFloat(noise1),
+                noise_other_1: parseFloat(noise2)
             };
             
             // Add throughput history features (assuming 7 values for t_minus_0 to t_minus_6)
@@ -610,7 +698,7 @@ class TwinRANTopology {
                 features[`DL_hist_t_minus_${i}`] = value;
             }
             
-            // Send prediction request to modelapi via proxy
+            // Send prediction request to aiaas via proxy
             const response = await fetch('/api/predict', {
                 method: 'POST',
                 headers: {
@@ -746,7 +834,7 @@ class TwinRANTopology {
 
         const data = await response.text();
         console.log('Time series raw response:', data);
-        const parsedData = this.parseFluxResponse(data);
+        const parsedData = this.parseFluxResponseForTimeSeries(data);
         console.log('Time series parsed data:', parsedData);
         return parsedData;
     }
