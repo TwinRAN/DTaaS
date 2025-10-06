@@ -921,6 +921,9 @@ class TwinRANTopology {
         // Filter data for selected field
         const fieldData = this.currentTimeSeriesData.filter(record => record.field === selectedField);
         
+        // Reverse the data to show from left to right in increasing time order
+        const reversedFieldData = fieldData.reverse();
+        
         // Destroy existing chart
         if (this.timeSeriesChart) {
             this.timeSeriesChart.destroy();
@@ -932,10 +935,10 @@ class TwinRANTopology {
         this.timeSeriesChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: fieldData.map(d => new Date(d.timestamp).toLocaleString()),
+                labels: reversedFieldData.map(d => new Date(d.timestamp).toLocaleString()),
                 datasets: [{
                     label: selectedField,
-                    data: fieldData.map(d => d.value),
+                    data: reversedFieldData.map(d => d.value),
                     borderColor: '#3498db',
                     backgroundColor: 'rgba(52, 152, 219, 0.1)',
                     tension: 0.1,
