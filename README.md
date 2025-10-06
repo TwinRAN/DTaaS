@@ -82,7 +82,7 @@ cd - && cd ..
 <!-- TOC --><a name="twinran-setup"></a>
 ## TwinRAN Setup
 
-Create a Personal Access Token (classic) https://github.com/settings/personal-access-tokens
+Create a [Personal Access Token (classic)](https://github.com/settings/tokens/new) with `read:packages` access.
 
 Set up TwinRAN and run everything 
 
