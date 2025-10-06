@@ -415,14 +415,12 @@ class TwinRANTopology {
             console.log('UE data fields:', Object.keys(d.data));
             console.log('UE data:', d.data);
             const throughputValue = d.data['throughput_dl_kbps'] || 0;
-            const throughputInMbps = (throughputValue / 1000).toFixed(2); // Convert kbps to Mbps
             console.log('Throughput value:', throughputValue);
-            console.log('Throughput in Mbps:', throughputInMbps);
             
             throughputDiv.innerHTML = `
                 <h4>Current Downlink Throughput</h4>
                 <div class="throughput-value ${throughputValue >= 0 ? 'success' : 'error'}">
-                    ${throughputValue >= 0 ? `${throughputInMbps} Mbps` : 'No data available'}
+                    ${throughputValue >= 0 ? `${throughputValue.toFixed(2)} kbps` : 'No data available'}
                 </div>
             `;
             nodeDetails.appendChild(throughputDiv);
@@ -431,7 +429,7 @@ class TwinRANTopology {
             const mlFormDiv = document.createElement('div');
             mlFormDiv.className = 'ml-prediction-form';
             mlFormDiv.innerHTML = `
-                <h4>ML Prediction</h4>
+                <h4>ML-based Next Downlink Throughput Prediction</h4>
                 <div class="form-group">
                     <label for="model-${d.id}">Model</label>
                     <select id="model-${d.id}" class="ml-input">
@@ -962,7 +960,9 @@ class TwinRANTopology {
                                 return 'Time: ' + context[0].label;
                             },
                             label: function(context) {
-                                return selectedField + ': ' + context.parsed.y;
+                                const value = context.parsed.y;
+                                const unit = selectedField.toLowerCase().includes('throughput') ? ' kbps' : '';
+                                return selectedField + ': ' + value.toFixed(2) + unit;
                             }
                         }
                     },
@@ -980,7 +980,7 @@ class TwinRANTopology {
                     y: {
                         title: {
                             display: true,
-                            text: selectedField
+                            text: selectedField.toLowerCase().includes('throughput') ? selectedField + ' (kbps)' : selectedField
                         },
                         beginAtZero: true
                     }

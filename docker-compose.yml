@@ -145,6 +145,8 @@ services:
     image: ghcr.io/twinran/xapp_kpm_twinran:latest # Check README for build instructions
     logging: *default-logging
     command: "stdbuf -o0 -e0 /usr/local/flexric/xApp/c/monitor/xapp_kpm_twinran"
+    environment:
+      KAFKA_BROKER_URL: kafka:9092
     depends_on:
       kafka:
         condition: service_healthy
