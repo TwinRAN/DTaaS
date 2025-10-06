@@ -82,11 +82,14 @@ cd - && cd ..
 <!-- TOC --><a name="twinran-setup"></a>
 ## TwinRAN Setup
 
-Set up TwinRAN and run everything
+Create a Personal Access Token (classic) https://github.com/settings/personal-access-tokens
+
+Set up TwinRAN and run everything 
 
 ```sh
 git clone https://github.com/TwinRAN/DTaaS twinran
 cd twinran
+echo <PERSONAL_ACCESS_TOKEN> | docker login ghcr.io -u <GITHUB_USERNAME> --password-stdin
 docker compose up -d
 cd ..
 ```
