@@ -1,4 +1,4 @@
-# TwinRAN - a DT-enabled AI-driven uplink performance analysis for 6G
+# TwinRAN - a DT-enabled AI-driven downlink performance analysis for 6G
 
 <!-- TOC start (generated with https://github.com/derlin/bitdowntoc) -->
 
