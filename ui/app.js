@@ -515,7 +515,7 @@ class TwinRANTopology {
             console.log('Throughput history:', throughputHistory);
             if (throughputHistory.length > 0) {
                 // Take the last 7 values (newest to oldest)
-                const last7Values = throughputHistory.slice(-7).reverse();
+                const last7Values = throughputHistory.slice(0, 7);
                 throughputInput.value = last7Values.join(', ');
                 throughputInput.placeholder = 'e.g. 6031.41, 5860.28, 6051.5';
             } else {
